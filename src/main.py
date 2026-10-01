@@ -1,25 +1,32 @@
-"""Graphical front-end of the shell emulator (stage 1).
+"""Graphical front-end of the shell emulator.
 
 The window title is built from real data of the operating system
 that runs the emulator, for example::
 
     Эмулятор - [user@hostname]
 
-Run the application with ``python -m src.main``. The ``--demo``
-flag replays the session from ``demo/demo_script.txt``
-automatically, which is convenient for a screen recording.
+Stage 2 adds the command-line configuration: ``--vfs PATH`` (the
+physical VFS directory) and ``--script PATH`` (the startup
+script). All parameters are printed as a ``[debug]`` banner on
+startup, in the console and in the terminal window.
+
+Run the application with ``python -m src.main``.
 """
 
 from __future__ import annotations
 
-import argparse
 import getpass
 import socket
+import sys
 from pathlib import Path
 
 import tkinter as tk
 
+from .config import ConfigError, EmulatorConfig, build_config
+from .config import debug_banner
 from .core import ShellCore
+from .script import ScriptReport, ScriptStep
+from .script import load_script_lines, run_script
 
 #: Window and terminal appearance (constants only).
 TITLE_TEMPLATE = "Эмулятор - [{user}@{host}]"
@@ -34,34 +41,23 @@ PROMPT_COLOR = "#4ec9b0"
 ERROR_COLOR = "#f48771"
 DIM_COLOR = "#7d8590"
 
-#: Timings of the automatic demo session, in milliseconds.
-DEMO_DELAY_MS = 600
+#: Timings of the automatic script replay, in milliseconds.
+STEP_DELAY_MS = 600
 CLOSE_DELAY_MS = 1200
-
-#: Where the demo script lives (next to ``src/`` in the repo).
-REPO_ROOT = Path(__file__).resolve().parent.parent
-DEMO_SCRIPT = REPO_ROOT / "demo" / "demo_script.txt"
-
-#: Fallback session used when the demo script file is missing.
-DEFAULT_DEMO = [
-    "ls",
-    "ls -la /home/user",
-    "cd /var/log",
-    "foobar",
-    "exit 1",
-    "exit",
-]
 
 
 class ShellApp:
     """A Tkinter window that hosts the emulator REPL."""
 
-    def __init__(self, root: tk.Tk, core: ShellCore) -> None:
+    def __init__(
+        self, root: tk.Tk, core: ShellCore, config: EmulatorConfig
+    ) -> None:
         """Build the window with the real OS data in its title.
 
         Args:
             root: The main Tk root window.
             core: The headless command dispatcher.
+            config: The resolved command-line configuration.
         """
         self._root = root
         self._core = core
@@ -71,6 +67,8 @@ class ShellApp:
         root.title(title)
         self._prompt = PROMPT_TEMPLATE.format(user=user, host=host)
         self._build_ui()
+        for line in debug_banner(config):
+            self._append(line + "\n", "dim")
         self._append(self._prompt, "prompt")
 
     def _build_ui(self) -> None:
@@ -132,8 +130,7 @@ class ShellApp:
         """Process the line typed in the input entry.
 
         Args:
-            _event: The Tk event (or ``None`` in demo mode); the
-                value is not used.
+            _event: The Tk event (not used).
         """
         line = self._entry.get()
         self._entry.delete("0", "end")
@@ -160,74 +157,102 @@ class ShellApp:
         self._append("session ended\n", "dim")
         self._root.after(CLOSE_DELAY_MS, self._root.destroy)
 
-    def run_demo(self) -> None:
-        """Replay the demo session automatically.
+    def run_startup_script(
+        self, path: Path, stop_on_error: bool = True
+    ) -> None:
+        """Load and replay the startup script, imitating a dialogue.
 
-        Every demo line is scheduled with a short delay so the
-        session looks like real interactive typing on the screen.
-        """
-        self._append("auto demo: replaying demo script\n", "dim")
-        delay = 0
-        for line in _load_demo_lines():
-            self._root.after(delay, self._type_demo_line, line)
-            delay += DEMO_DELAY_MS
-
-    def _type_demo_line(self, line: str) -> None:
-        """Simulate the user typing one demo line.
+        Both the input lines and their output are displayed with
+        short delays, like a real interactive session. In the
+        startup-script mode the script stops at the first error
+        (stage 2 requirement); the demo mode keeps going to show
+        every line.
 
         Args:
-            line: The line to type into the input entry.
+            path: Path to the startup script file.
+            stop_on_error: Whether the first error stops the run.
         """
-        self._entry.insert("end", line)
-        self._on_return(None)
+        try:
+            entries = load_script_lines(path)
+        except OSError as err:
+            self._append(f"error: cannot read script: {err}\n", "error")
+            return
+        mode = "startup script" if stop_on_error else "demo session"
+        self._append(f"{mode}: {path}\n", "dim")
+        report = run_script(self._core, entries, stop_on_error)
+        delay = 0
+        count = len(report.steps)
+        for index, step in enumerate(report.steps):
+            self._root.after(delay, self._show_step, step)
+            delay += STEP_DELAY_MS
+            if index < count - 1:
+                self._root.after(
+                    delay, self._append, self._prompt, "prompt"
+                )
+                delay += STEP_DELAY_MS
+        self._root.after(delay, self._finish_script, report)
+
+    def _show_step(self, step: ScriptStep) -> None:
+        """Render one replayed step: the input echo and its output.
+
+        Args:
+            step: The replayed script step to render.
+        """
+        self._append(step.line + "\n")
+        if step.output:
+            tag = "error" if step.is_error else None
+            self._append(step.output + "\n", tag)
+
+    def _finish_script(self, report: ScriptReport) -> None:
+        """Show the script outcome and return to the prompt.
+
+        Args:
+            report: The report of the finished script run.
+        """
+        if not self._core.running:
+            self._close()
+            return
+        if report.stopped_on_error:
+            last = report.steps[-1]
+            text = f"script stopped at line {last.number} (error)\n"
+        else:
+            count = len(report.steps)
+            text = f"script finished: {count} command(s)\n"
+        self._append(text, "dim")
+        self._append(self._prompt, "prompt")
 
 
-def _load_demo_lines() -> list[str]:
-    """Read the demo script, skipping blanks and ``#`` comments.
+def main(argv: list[str] | None = None) -> int:
+    """Application entry point.
+
+    Args:
+        argv: The command-line arguments (defaults to
+            ``sys.argv[1:]``).
 
     Returns:
-        The list of lines to replay in the demo session.
+        The process exit code: 0 on success, 1 on a configuration
+        error.
     """
-    if not DEMO_SCRIPT.is_file():
-        return list(DEFAULT_DEMO)
-    lines = DEMO_SCRIPT.read_text(encoding="utf-8").splitlines()
-    result = []
-    for line in lines:
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#"):
-            result.append(stripped)
-    return result
-
-
-def build_arg_parser() -> argparse.ArgumentParser:
-    """Create the command-line argument parser.
-
-    Returns:
-        The parser with the ``--demo`` flag.
-    """
-    parser = argparse.ArgumentParser(
-        prog="shell-emulator",
-        description="Эмулятор языка оболочки ОС (вариант 26, этап 1).",
-    )
-    parser.add_argument(
-        "--demo",
-        action="store_true",
-        help="автоматически воспроизвести демо-сессию "
-        "из demo/demo_script.txt",
-    )
-    return parser
-
-
-def main() -> None:
-    """Application entry point: parse args and open the window."""
-    args = build_arg_parser().parse_args()
-    core = ShellCore()
+    args = sys.argv[1:] if argv is None else argv
+    try:
+        config = build_config(args)
+    except ConfigError as err:
+        if sys.stderr is not None:
+            print(f"error: {err}", file=sys.stderr)
+        return 1
+    if sys.stdout is not None:
+        for line in debug_banner(config):
+            print(line)
     root = tk.Tk()
-    app = ShellApp(root, core)
-    if args.demo:
-        app.run_demo()
+    core = ShellCore()
+    app = ShellApp(root, core, config)
+    if config.script_path is not None:
+        app.run_startup_script(
+            config.script_path, stop_on_error=not config.demo
+        )
     root.mainloop()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
