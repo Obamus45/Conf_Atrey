@@ -5,10 +5,9 @@ that runs the emulator, for example::
 
     Эмулятор - [user@hostname]
 
-Stage 2 adds the command-line configuration: ``--vfs PATH`` (the
-physical VFS directory) and ``--script PATH`` (the startup
-script). All parameters are printed as a ``[debug]`` banner on
-startup, in the console and in the terminal window.
+The prompt shows the current VFS directory, and the ``[debug]``
+banner printed on startup lists all the command-line parameters
+(``--vfs``, ``--script``, ``--demo``) plus the loaded VFS size.
 
 Run the application with ``python -m src.main``.
 """
@@ -27,10 +26,11 @@ from .config import debug_banner
 from .core import ShellCore
 from .script import ScriptReport, ScriptStep
 from .script import load_script_lines, run_script
+from .vfs import VfsSystem
 
 #: Window and terminal appearance (constants only).
 TITLE_TEMPLATE = "Эмулятор - [{user}@{host}]"
-PROMPT_TEMPLATE = "{user}@{host}:~$ "
+PROMPT_TEMPLATE = "{user}@{host}:{path}$ "
 FONT_FAMILY = "Courier New"
 FONT_SIZE = 11
 TEXT_WIDTH = 78
@@ -61,15 +61,19 @@ class ShellApp:
         """
         self._root = root
         self._core = core
-        user = getpass.getuser()
-        host = socket.gethostname()
-        title = TITLE_TEMPLATE.format(user=user, host=host)
+        self._user = getpass.getuser()
+        self._host = socket.gethostname()
+        title = TITLE_TEMPLATE.format(user=self._user, host=self._host)
         root.title(title)
-        self._prompt = PROMPT_TEMPLATE.format(user=user, host=host)
         self._build_ui()
         for line in debug_banner(config):
             self._append(line + "\n", "dim")
-        self._append(self._prompt, "prompt")
+        files, dirs = core.vfs_stats
+        self._append(
+            f"[debug] vfs loaded: {files} files, {dirs} dirs\n",
+            "dim",
+        )
+        self._append_prompt()
 
     def _build_ui(self) -> None:
         """Create the terminal area and the input entry."""
@@ -126,6 +130,16 @@ class ShellApp:
         self._text.configure(state="disabled")
         self._text.see("end")
 
+    def _prompt_line(self) -> str:
+        """Build the prompt with the user, host and VFS directory."""
+        return PROMPT_TEMPLATE.format(
+            user=self._user, host=self._host, path=self._core.cwd
+        )
+
+    def _append_prompt(self) -> None:
+        """Append the current prompt to the terminal area."""
+        self._append(self._prompt_line(), "prompt")
+
     def _on_return(self, _event: object | None) -> None:
         """Process the line typed in the input entry.
 
@@ -150,7 +164,7 @@ class ShellApp:
         if not self._core.running:
             self._close()
             return
-        self._append(self._prompt, "prompt")
+        self._append_prompt()
 
     def _close(self) -> None:
         """Show the farewell line and close the window."""
@@ -186,9 +200,7 @@ class ShellApp:
             self._root.after(delay, self._show_step, step)
             delay += STEP_DELAY_MS
             if index < count - 1:
-                self._root.after(
-                    delay, self._append, self._prompt, "prompt"
-                )
+                self._root.after(delay, self._append_prompt)
                 delay += STEP_DELAY_MS
         self._root.after(delay, self._finish_script, report)
 
@@ -219,7 +231,7 @@ class ShellApp:
             count = len(report.steps)
             text = f"script finished: {count} command(s)\n"
         self._append(text, "dim")
-        self._append(self._prompt, "prompt")
+        self._append_prompt()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -243,8 +255,9 @@ def main(argv: list[str] | None = None) -> int:
     if sys.stdout is not None:
         for line in debug_banner(config):
             print(line)
+    vfs = VfsSystem.from_directory(config.vfs_path)
     root = tk.Tk()
-    core = ShellCore()
+    core = ShellCore(vfs)
     app = ShellApp(root, core, config)
     if config.script_path is not None:
         app.run_startup_script(

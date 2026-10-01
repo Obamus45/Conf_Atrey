@@ -34,7 +34,7 @@ def test_runs_to_the_end():
     assert report.stopped_on_error is False
     executed = [step.line for step in report.steps]
     assert executed == ["ls", "cd .."]
-    assert report.steps[0].output == "ls: no args"
+    assert report.steps[0].output == ""
 
 
 def test_stops_on_the_first_error():

@@ -1,28 +1,25 @@
-"""Core logic of the shell emulator (headless).
+"""Core logic of the shell emulator.
 
 The module parses input lines and dispatches them to command
-handlers. The graphical front-end (``src.main``) reuses this
-module, so the behaviour can be unit-tested without a display.
-
-Stage 1 (variant 26) provides:
-
-* a simple whitespace parser (command + arguments);
-* stub commands ``ls`` and ``cd`` that echo their name and args;
-* the ``exit`` command;
-* error messages for unknown commands and wrong arguments.
+handlers. Stage 3 replaces the stage 1 stubs with real commands
+backed by the in-memory VFS: ``ls``, ``cd``, ``pwd`` and ``cat``.
+The graphical front-end (``src.main``) reuses this module, so the
+behaviour can be unit-tested without a display.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-#: Text templates of the stub commands.
-STUB_WITH_ARGS = "{name}: args: {args}"
-STUB_NO_ARGS = "{name}: no args"
+from .vfs import ROOT_PATH, VfsSystem
 
 #: Error templates (UNIX-style messages, intentionally in English).
 UNKNOWN_COMMAND = "sh: {name}: command not found"
 EXIT_USAGE = "exit: too many arguments"
+LS_USAGE = "ls: too many arguments"
+CD_USAGE = "cd: too many arguments"
+PWD_USAGE = "pwd: too many arguments"
+CAT_USAGE = "cat: missing file operand"
 
 
 @dataclass(frozen=True)
@@ -52,41 +49,39 @@ def parse_line(line: str) -> tuple[str, list[str]]:
     return tokens[0], tokens[1:]
 
 
-def _stub(name: str, args: list[str]) -> CommandResult:
-    """Echo a stub command's name and its arguments.
-
-    Args:
-        name: The command name (``ls`` or ``cd``).
-        args: The arguments that follow the command.
-
-    Returns:
-        A result with the text the stub prints to the user.
-    """
-    if not args:
-        return CommandResult(STUB_NO_ARGS.format(name=name), False)
-    text = STUB_WITH_ARGS.format(name=name, args=", ".join(args))
-    return CommandResult(text, False)
-
-
 class ShellCore:
-    """Dispatches input lines to command handlers.
+    """Dispatches input lines to VFS-backed command handlers."""
 
-    The core keeps the minimal state needed for stage 1: the flag
-    that tells the front-end whether the session is still running.
-    """
+    def __init__(self, vfs: VfsSystem | None = None) -> None:
+        """Create the core and register the commands.
 
-    def __init__(self) -> None:
-        """Create the core and register the stub commands."""
+        Args:
+            vfs: The in-memory file system. An empty VFS is
+                created when none is given.
+        """
         self._running = True
+        self._vfs = vfs if vfs is not None else VfsSystem()
         self._handlers = {
-            "ls": _stub,
-            "cd": _stub,
+            "ls": self._ls,
+            "cd": self._cd,
+            "pwd": self._pwd,
+            "cat": self._cat,
         }
 
     @property
     def running(self) -> bool:
         """Whether the session should keep running."""
         return self._running
+
+    @property
+    def cwd(self) -> str:
+        """The current VFS directory (shown in the prompt)."""
+        return self._vfs.cwd
+
+    @property
+    def vfs_stats(self) -> tuple[int, int]:
+        """The VFS size: the file count and the directory count."""
+        return self._vfs.stats
 
     def execute(self, line: str) -> CommandResult:
         """Execute one input line.
@@ -106,7 +101,7 @@ class ShellCore:
         handler = self._handlers.get(command)
         if handler is None:
             return self._unknown(command)
-        return handler(command, args)
+        return handler(args)
 
     def _unknown(self, name: str) -> CommandResult:
         """Build the error result for an unknown command.
@@ -133,3 +128,99 @@ class ShellCore:
             return CommandResult(EXIT_USAGE, True)
         self._running = False
         return CommandResult("", False)
+
+    def _ls(self, args: list[str]) -> CommandResult:
+        """List a VFS directory (the current one by default).
+
+        Args:
+            args: The command arguments (at most one path).
+
+        Returns:
+            The directory entries in one line (directories marked
+            with a trailing slash), or an error message.
+        """
+        if len(args) > 1:
+            return CommandResult(LS_USAGE, True)
+        if args:
+            target = self._vfs.resolve(args[0])
+            name = args[0]
+        else:
+            target = self._vfs.cwd
+            name = target
+        if not self._vfs.exists(target):
+            return CommandResult(
+                f"ls: {name}: no such file or directory", True
+            )
+        if not self._vfs.is_dir(target):
+            return CommandResult(
+                f"ls: {name}: not a directory", True
+            )
+        dirs, files = self._vfs.list_dir(target)
+        entries = [d + "/" for d in dirs] + files
+        return CommandResult(" ".join(entries), False)
+
+    def _cd(self, args: list[str]) -> CommandResult:
+        """Change the current VFS directory.
+
+        Without arguments the core returns to the VFS root.
+
+        Args:
+            args: The command arguments (at most one path).
+
+        Returns:
+            An empty result on success, or an error message.
+        """
+        if len(args) > 1:
+            return CommandResult(CD_USAGE, True)
+        if args:
+            target = self._vfs.resolve(args[0])
+        else:
+            target = ROOT_PATH
+        if not self._vfs.exists(target):
+            return CommandResult(
+                f"cd: {target}: no such file or directory", True
+            )
+        if not self._vfs.is_dir(target):
+            return CommandResult(
+                f"cd: {target}: not a directory", True
+            )
+        self._vfs.set_current(target)
+        return CommandResult("", False)
+
+    def _pwd(self, args: list[str]) -> CommandResult:
+        """Print the current VFS directory.
+
+        Args:
+            args: The command arguments (must be empty).
+
+        Returns:
+            The current VFS path, or an error message.
+        """
+        if args:
+            return CommandResult(PWD_USAGE, True)
+        return CommandResult(self._vfs.cwd, False)
+
+    def _cat(self, args: list[str]) -> CommandResult:
+        """Print the content of one or more VFS files.
+
+        Args:
+            args: The file paths (at least one).
+
+        Returns:
+            The concatenated file contents, or an error message.
+        """
+        if not args:
+            return CommandResult(CAT_USAGE, True)
+        chunks: list[str] = []
+        for arg in args:
+            target = self._vfs.resolve(arg)
+            if not self._vfs.exists(target):
+                return CommandResult(
+                    f"cat: {arg}: no such file or directory", True
+                )
+            if self._vfs.is_dir(target):
+                return CommandResult(
+                    f"cat: {arg}: is a directory", True
+                )
+            chunks.append(self._vfs.read_file(target) or "")
+        return CommandResult("".join(chunks), False)
