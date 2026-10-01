@@ -31,13 +31,17 @@ def _read_text(path: Path) -> str:
 
     Returns:
         The decoded content (UTF-8, or latin-1 for data that is
-        not valid UTF-8, so loading never fails).
+        not valid UTF-8, so loading never fails). Line endings
+        are normalized to LF, so the VFS content does not depend
+        on the operating system that created the source
+        directory (Windows text files use CRLF).
     """
     data = path.read_bytes()
     try:
-        return data.decode("utf-8")
+        text = data.decode("utf-8")
     except UnicodeDecodeError:
-        return data.decode("latin-1")
+        text = data.decode("latin-1")
+    return text.replace("\r\n", "\n")
 
 
 class VfsSystem:

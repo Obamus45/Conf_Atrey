@@ -124,3 +124,11 @@ def test_set_current_rejects_non_directory(tmp_path):
         vfs.set_current("/etc/hostname")
     with pytest.raises(ValueError):
         vfs.set_current("/no_such_dir")
+
+
+def test_crlf_source_is_normalized_to_lf(tmp_path):
+    """Windows CRLF endings are normalized to LF on loading."""
+    source = tmp_path / "crlf.txt"
+    source.write_bytes("one\r\ntwo\r\n".encode("utf-8"))
+    vfs = VfsSystem.from_directory(tmp_path)
+    assert vfs.read_file("/crlf.txt") == "one\ntwo\n"
