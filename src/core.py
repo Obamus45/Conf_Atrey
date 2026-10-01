@@ -3,14 +3,15 @@
 The module parses input lines and dispatches them to command
 handlers. Stage 3 replaces the stage 1 stubs with real commands
 backed by the in-memory VFS: ``ls``, ``cd``, ``pwd`` and ``cat``.
-The graphical front-end (``src.main``) reuses this module, so the
-behaviour can be unit-tested without a display.
+Stage 4 deepens ``ls``/``cd`` and adds ``cal`` and ``date``.
+The graphical front-end (``src.main``) reuses this module, so
+the behaviour can be unit-tested without a display.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
+from . import commands
+from .result import CommandResult
 from .vfs import ROOT_PATH, VfsSystem
 
 #: Error templates (UNIX-style messages, intentionally in English).
@@ -20,14 +21,6 @@ LS_USAGE = "ls: too many arguments"
 CD_USAGE = "cd: too many arguments"
 PWD_USAGE = "pwd: too many arguments"
 CAT_USAGE = "cat: missing file operand"
-
-
-@dataclass(frozen=True)
-class CommandResult:
-    """The outcome of executing one input line."""
-
-    text: str
-    is_error: bool
 
 
 def parse_line(line: str) -> tuple[str, list[str]]:
@@ -66,6 +59,8 @@ class ShellCore:
             "cd": self._cd,
             "pwd": self._pwd,
             "cat": self._cat,
+            "cal": self._cal,
+            "date": self._date,
         }
 
     @property
@@ -128,6 +123,28 @@ class ShellCore:
             return CommandResult(EXIT_USAGE, True)
         self._running = False
         return CommandResult("", False)
+
+    def _cal(self, args: list[str]) -> CommandResult:
+        """Handle the ``cal`` command (calendar, stage 4).
+
+        Args:
+            args: An optional month and an optional year.
+
+        Returns:
+            The calendar text, or an error message.
+        """
+        return commands.cal(args)
+
+    def _date(self, args: list[str]) -> CommandResult:
+        """Handle the ``date`` command (stage 4).
+
+        Args:
+            args: Optionally a single ``+FORMAT`` string.
+
+        Returns:
+            The formatted date text, or an error message.
+        """
+        return commands.date(args)
 
     def _ls(self, args: list[str]) -> CommandResult:
         """List a VFS directory (the current one by default).
