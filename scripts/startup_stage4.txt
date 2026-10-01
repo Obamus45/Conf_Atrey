@@ -1,0 +1,19 @@
+# Стартовый скрипт: команды этапа 4 (cal, date, режимы ls, cd -).
+# Запуск: python -m src.main --script scripts\startup_stage4.txt
+# Скрипт останавливается при первой ошибке (последняя строка).
+cal
+cal 1
+cal 12 2026
+date
+date +%Y-%m-%d
+ls
+ls -a
+ls -l
+ls -la /etc
+cd /home/user
+cd -
+pwd
+cd /etc
+ls -l
+# Обработка ошибок: скрипт остановится на этой строке
+cal 13

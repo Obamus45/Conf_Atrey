@@ -1,11 +1,15 @@
-# Демо-сессия: этапы 1-3 (VFS, обработка ошибок, выход).
+# Демо-сессия: этапы 1-4 (VFS, cal, date, ошибки, выход)
 ls
 cd /home/user
 pwd
-ls
 cat notes.txt
-cd /etc
-ls
+cd /
+ls -a
+ls -l
+cal
+cal 1 2027
+date
+date +%Y-%m-%d
 foobar
 exit 1
 exit
