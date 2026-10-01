@@ -379,7 +379,7 @@ etc/ home/ tmp/
 ...
 user@PC:/$ cd /no_such_dir
 cd: /no_such_dir: no such file or directory
-script stopped at line 16 (error)
+script stopped at line 19 (error)
 user@PC:/$
 ```
 
