@@ -3,7 +3,7 @@
 **Дисциплина:** Конфигурационное управление
 **Группа:** ИКБО-32-25
 **Вариант:** 26
-**Выполнено:** Этап 1 (REPL), Этап 2 (Конфигурация), Этап 3 (VFS)
+**Выполнено:** Этап 1 (REPL), Этап 2 (Конфигурация), Этап 3 (VFS), Этап 4 (Основные команды)
 
 ## 1. Общее описание
 
@@ -24,6 +24,13 @@ UNIX-подобной операционной системы.
 старте, ничего на диске не изменяется. Заглушки `ls` и `cd`
 замещены реальными командами, добавлены `pwd` и `cat`.
 
+На **этапе 4** команды `ls` и `cd` доведены до вида UNIX
+`ls`/`cd`: у `ls` появились опции `-a` (скрытые файлы) и
+`-l` (развёрнутый вид: права, размер), у `cd` — режим `cd -`
+(возврат в предыдущую директорию). Добавлены команды `cal`
+(календарь месяца) и `date` (текущие дата и время, формат
+после `+`).
+
 Приложение реализовано на **Python**, графический
 интерфейс — **Tkinter** (входит в стандартную поставку
 Python, внешних зависимостей нет).
@@ -42,9 +49,12 @@ Python, внешних зависимостей нет).
   (`--vfs`), при запуске дерево и содержимое файлов
   копируются в память; работа с диском после загрузки не
   ведётся, данные VFS не модифицируются.
-- Команды (этап 3): `ls`, `cd` — работают с VFS (заглушки
-  этапа 1 заменены), `pwd` — текущая директория VFS,
-  `cat` — содержимое файлов VFS.
+- Команды (этапы 3–4): `ls` — со списком директории,
+  опциями `-a` (скрытые файлы) и `-l` (права, размер),
+  `cd` — переходы и `cd -` (предыдущая директория), `pwd` —
+  текущая директория VFS, `cat` — содержимое файлов VFS,
+  `cal` — календарь месяца (0/1/2 аргумента), `date` — дата
+  и время, формат после `+`.
 - Приглашение ввода показывает **текущую директорию VFS**:
   `user@host:/home/user$ `.
 - `exit` завершает сеанс и закрывает окно.
@@ -75,7 +85,9 @@ Conf_Atrey/
 ├── src/
 │   ├── __init__.py
 │   ├── core.py            # парсер и диспетчер команд (без GUI)
+│   ├── commands.py        # команды cal и date (этап 4)
 │   ├── config.py          # параметры командной строки (этап 2)
+│   ├── result.py          # результат выполнения команды (этап 4)
 │   ├── script.py          # движок стартового скрипта (этап 2)
 │   ├── vfs.py             # VFS в памяти (этап 3)
 │   └── main.py            # графический интерфейс (Tkinter)
@@ -83,6 +95,7 @@ Conf_Atrey/
 │   ├── __init__.py
 │   ├── test_parser.py     # тесты парсера
 │   ├── test_core.py       # тесты команд и VFS-операций
+│   ├── test_commands.py   # тесты cal и date (этап 4)
 │   ├── test_config.py     # тесты параметров командной строки
 │   ├── test_script.py     # тесты стартового скрипта
 │   ├── test_vfs.py        # тесты VFS в памяти (этап 3)
@@ -96,12 +109,17 @@ Conf_Atrey/
 │   ├── test_errors.sh     # ошибки параметров, Linux/macOS
 │   ├── test_vfs.bat       # варианты VFS, Windows (этап 3)
 │   ├── test_vfs.sh        # варианты VFS, Linux/macOS (этап 3)
+│   ├── test_stage4.bat    # команды этапа 4, Windows
+│   ├── test_stage4.sh     # команды этапа 4, Linux/macOS
 │   ├── startup_basic.txt  # стартовый скрипт: без ошибок
 │   ├── startup_error.txt  # стартовый скрипт: стоп на ошибке
-│   └── startup_full.txt   # все команды этапов 1-3 (этап 3)
+│   ├── startup_full.txt   # все команды этапов 1-3 (этап 3)
+│   └── startup_stage4.txt # все режимы команд этапа 4
 ├── vfs/                   # VFS по умолчанию (3 уровня вложенности)
+│   ├── .profile           # скрытый файл (для ls -a, этап 4)
 │   ├── etc/hostname
 │   ├── home/user/notes.txt
+│   ├── home/user/.bashrc  # скрытый файл (для ls -a, этап 4)
 │   └── tmp/scratch.txt
 ├── vfs_sample/            # второй VFS для проверки --vfs (этап 2)
 │   ├── data/readme.txt
@@ -114,8 +132,12 @@ Conf_Atrey/
 │   ├── gamma.txt
 │   └── logs/app.log
 └── vfs_deep/              # VFS «не менее 3 уровней» (этап 3)
+    ├── etc/hostname       # + layout, совпадающий с vfs/ (этап 4)
+    ├── home/user/notes.txt
+    ├── home/user/.bashrc
     ├── level1.txt
-    └── l1/l2/l3/l4/deep.txt
+    ├── l1/l2/l3/l4/deep.txt
+    └── tmp/scratch.txt
 ```
 
 Логика (парсер, команды, конфигурация, стартовый скрипт,
@@ -130,10 +152,12 @@ VFS) вынесена в `src/core.py`, `src/config.py`,
 
 | Команда | Аргументы | Поведение |
 | --- | --- | --- |
-| `ls` | `[путь]` | список текущей (или указанной) директории VFS: поддиректории помечаются `/`, например `etc/ home/ tmp/` |
-| `cd` | `[путь]` | переход в директории VFS: абсолютные и относительные пути, `..`, `.`; без аргументов — корень VFS |
+| `ls` | `[-a] [-l] [путь]` | список текущей (или указанной) директории VFS: поддиректории помечаются `/`, например `etc/ home/ tmp/`. Опции комбинируются (`-la`, `-al`). `-a` — показать скрытые (dot-)файлы; `-l` — развёрнутый вид: строка на запись `drwxr-xr-x     -  etc` / `-rw-r--r--     9  hostname` (права, размер в байтах, имя) |
+| `cd` | `[путь \| -]` | переход в директории VFS: абсолютные и относительные пути, `..`, `.`; без аргументов — корень VFS; `cd -` — предыдущая директория (печатает новый путь) |
 | `pwd` | — | текущая директория VFS |
 | `cat` | `файл [файл ...]` | содержимое одного или нескольких файлов VFS |
+| `cal` | `[месяц] [год]` | календарь месяца: без аргументов — текущий месяц, 1 аргумент — месяц текущего года, 2 — месяц и год; сетка недель по 7 дней, воскресенье — первый день |
+| `date` | `["+ФОРМАТ"]` | текущие дата и время в формате UNIX (`Thu Oct 01 12:00:00 2026`); после `+` — формат `strftime` (например `date +%Y-%m-%d`) |
 | `exit` | — | завершает сеанс, окно закрывается |
 
 ### Обработка ошибок
@@ -150,6 +174,12 @@ VFS) вынесена в `src/core.py`, `src/config.py`,
 | `cat`: путь — директория | `cat: <путь>: is a directory` |
 | `cat` без аргументов | `cat: missing file operand` |
 | `ls` / `cd` / `pwd` с лишними аргументами | `<cmd>: too many arguments` |
+| `ls` с неизвестной опцией | `ls: invalid option -- 'x'` |
+| `cd -` без предыдущей директории | `cd: no previous directory` |
+| `cal`: месяц не число или вне 1–12 | `cal: invalid month: 13` |
+| `cal`: год не число или 0 | `cal: invalid year: 0` |
+| `cal` / `date` с лишними аргументами | `<cmd>: too many arguments` |
+| `date` с аргументом без `+` | `date: invalid format: Y` |
 | пустая строка | игнорируется, повторяется приглашение ввода |
 
 При запуске (в консоли, код возврата 1):
@@ -181,8 +211,8 @@ VFS) вынесена в `src/core.py`, `src/config.py`,
 | --- | --- |
 | `vfs_minimal/` | минимальный: один файл |
 | `vfs_multi/` | несколько файлов (+ поддиректория) |
-| `vfs_deep/` | не менее 3 уровней вложенности (до 4) |
-| `vfs/` | VFS по умолчанию (3 уровня) |
+| `vfs_deep/` | не менее 3 уровней вложенности (до 4) + `etc`/`home`/`tmp` как в `vfs/` (этап 4) |
+| `vfs/` | VFS по умолчанию (3 уровня, со скрытыми файлами для `ls -a`) |
 | `vfs_sample/` | второй VFS для проверки `--vfs` |
 
 ### Настройки (аргументы командной строки)
@@ -202,7 +232,7 @@ VFS) вынесена в `src/core.py`, `src/config.py`,
 [debug] vfs: D:\repos\Conf_Atrey\vfs
 [debug] script: D:\repos\Conf_Atrey\scripts\startup_full.txt
 [debug] demo: no
-[debug] vfs loaded: 3 files, 5 dirs
+[debug] vfs loaded: 5 files, 5 dirs
 ```
 
 Незаданный параметр отображается как `not set`.
@@ -220,10 +250,14 @@ VFS) вынесена в `src/core.py`, `src/config.py`,
 - нормальный завершён: `script finished: N command(s)`.
 
 Примеры: `scripts/startup_basic.txt` (без ошибок),
-`scripts/startup_error.txt` (стоп на ошибке) и
+`scripts/startup_error.txt` (стоп на ошибке),
 `scripts/startup_full.txt` — все команды этапов 1–3
 (VFS-переходы, `cat`, и завершающая строка-ошибка, на
-которой скрипт останавливается).
+которой скрипт останавливается),
+`scripts/startup_stage4.txt` — все режимы команд этапа 4
+(`cal` 0/1/2 аргумента, `date` + формат, `ls`/`ls -a`/
+`ls -l`/`ls -la`, `cd /`, `cd -`, и завершающая
+строка-ошибка `cal 13`).
 
 ### Скрипты реальной ОС (тестирование)
 
@@ -232,6 +266,7 @@ VFS) вынесена в `src/core.py`, `src/config.py`,
 | все параметры (этап 2) | `scripts\test_config.bat` | `scripts/test_config.sh` | запуски: без параметров, `--vfs`, `--script`, всё вместе, `--demo` |
 | ошибки параметров (этап 2) | `scripts\test_errors.bat` | `scripts/test_errors.sh` | некорректные `--vfs`/`--script`, код возврата 1 |
 | варианты VFS (этап 3) | `scripts\test_vfs.bat` | `scripts/test_vfs.sh` | `vfs_minimal`, `vfs_multi`, `vfs_deep`, VFS по умолчанию + `startup_full.txt`, `--vfs` + `--script` вместе, несуществующий `--vfs` |
+| команды этапа 4 | `scripts\test_stage4.bat` | `scripts/test_stage4.sh` | интерактивный запуск, `startup_stage4.txt` на VFS по умолчанию и на `vfs_deep` |
 
 Каждый запуск открывает окно эмулятора; закройте его
 командой `exit`, чтобы скрипт перешёл к следующему
@@ -253,6 +288,7 @@ VFS) вынесена в `src/core.py`, `src/config.py`,
 | запуск тестов | `make test` или `python -m pytest -q` |
 | тесты параметров (скрипты ОС) | `scripts\test_config.bat` / `bash scripts/test_config.sh` (`make test-os`) |
 | тесты вариантов VFS | `scripts\test_vfs.bat` / `bash scripts/test_vfs.sh` |
+| тесты команд этапа 4 | `scripts\test_stage4.bat` / `bash scripts/test_stage4.sh` |
 
 ## 4. Примеры использования
 
@@ -310,6 +346,44 @@ script stopped at line 16 (error)
 user@PC:/$
 ```
 
+### Основные команды этапа 4 (стартовый скрипт)
+
+```
+python -m src.main --script scripts\startup_stage4.txt
+```
+
+Скрипт последовательно выполняет `cal` (без аргументов,
+месяц, месяц + год), `date` (по умолчанию и `+%Y-%m-%d`),
+`ls`, `ls -a`, `ls -l`, `ls -la /etc`, `cd /home/user`,
+`cd -`, `pwd`, `cd /etc`, `ls -l` и завершается строкой
+`cal 13` — первой ошибкой, на которой останавливается:
+
+```
+user@PC:/$ cal
+    October 2026
+Su Mo Tu We Th Fr Sa
+ 4           1  2  3
+11  5  6  7  8  9 10
+18 12 13 14 15 16 17
+25 19 20 21 22 23 24
+   26 27 28 29 30 31
+user@PC:/$ date
+Thu Oct 01 11:06:22 2026
+user@PC:/$ ls -la /etc
+-rw-r--r--     9  hostname
+user@PC:/$ cd /home/user
+user@PC:/home/user$ cd -
+/
+user@PC:/$ cal 13
+cal: invalid month: 13
+script stopped at line 19 (error)
+user@PC:/$
+```
+
+`ls -a` дополнительно показывает скрытые файлы
+(`.profile`, `.bashrc`), а `ls -l` — права и размер файла в
+байтах.
+
 ### Варианты VFS (скрипты ОС)
 
 ```
@@ -338,9 +412,10 @@ error: VFS path does not exist: no_such_dir
 ```
 
 Эмулятор сам «вводит» команды из `demo/demo_script.txt`:
-переходы по VFS, `cat`, неизвестную команду и `exit 1`
-(красным, демо-режим не останавливается), затем `exit`
-закрывает окно. Режим рассчитан на запись экрана.
+переходы по VFS, `cat`, `ls -a`/`ls -l`, `cal`, `date`
+с форматом, неизвестную команду и `exit 1` (красным,
+демо-режим не останавливается), затем `exit` закрывает
+окно. Режим рассчитан на запись экрана.
 
 ## 5. Коммиты этапов
 
@@ -367,3 +442,10 @@ error: VFS path does not exist: no_such_dir
 - `feat(vfs): implement ls, cd, pwd and cat on the VFS`
 - `feat(os-scripts): add VFS variant tests and the full startup script`
 - `docs: update README with stage 3 (VFS)`
+
+### Этап 4 (Основные команды)
+
+- `feat(commands): add cal and date commands`
+- `feat(vfs): add ls -a/-l flags, hidden files and cd - mode`
+- `feat(os-scripts): add stage 4 startup and test scripts`
+- `docs: update README with stage 4 commands`
