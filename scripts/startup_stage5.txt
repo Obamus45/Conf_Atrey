@@ -1,0 +1,18 @@
+# Стартовый скрипт: команды этапа 5 (touch, chmod, vfs-load).
+# Запуск: python -m src.main --script scripts\startup_stage5.txt
+# Скрипт останавливается при первой ошибке (последняя строка).
+ls
+touch newfile.txt
+ls
+touch newfile.txt
+chmod +x newfile.txt
+ls -l
+chmod -x newfile.txt
+ls -l
+touch etc
+vfs-load vfs_multi
+ls
+cat alpha.txt
+vfs-load vfs
+# Обработка ошибок: скрипт остановится на этой строке
+touch /no_such_dir/file

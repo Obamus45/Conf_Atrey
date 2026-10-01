@@ -1,4 +1,4 @@
-# Демо-сессия: этапы 1-4 (VFS, cal, date, ошибки, выход)
+# Демо-сессия: этапы 1-5 (VFS, cal, date, touch, chmod, vfs-load)
 ls
 cd /home/user
 pwd
@@ -10,6 +10,11 @@ cal
 cal 1 2027
 date
 date +%Y-%m-%d
+touch demo.txt
+chmod +x demo.txt
+ls -l
+vfs-load vfs_sample
+ls
 foobar
 exit 1
 exit
