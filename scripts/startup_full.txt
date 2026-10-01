@@ -1,0 +1,19 @@
+# Стартовый скрипт: все команды этапов 1-3 (VFS по умолчанию vfs/).
+# Запуск: python -m src.main --script scripts\startup_full.txt
+# Скрипт останавливается при первой ошибке — последняя строка.
+pwd
+ls
+cd /home/user
+pwd
+ls
+cat notes.txt
+cd ..
+pwd
+ls
+cd /etc
+ls
+cat hostname
+cd /
+ls
+# Обработка ошибок: скрипт остановится на этой строке
+cd /no_such_dir
