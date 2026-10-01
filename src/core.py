@@ -21,6 +21,87 @@ LS_USAGE = "ls: too many arguments"
 CD_USAGE = "cd: too many arguments"
 PWD_USAGE = "pwd: too many arguments"
 CAT_USAGE = "cat: missing file operand"
+CD_NO_PREVIOUS = "cd: no previous directory"
+
+#: Valid ls option letters.
+LS_FLAGS = "al"
+
+#: The prefix of a hidden (dot) entry.
+DOT = "."
+
+#: Permission strings of the ls -l mode (static on this stage).
+DIR_PERMS = "drwxr-xr-x"
+FILE_PERMS = "-rw-r--r--"
+
+#: The cd argument that switches to the previous directory.
+CD_PREV = "-"
+
+
+def _parse_ls_args(
+    args: list[str],
+) -> tuple[set[str], list[str], str | None]:
+    """Split ls arguments into flags, paths and an error.
+
+    Args:
+        args: The raw ls arguments.
+
+    Returns:
+        The found flags, the paths and an error message when an
+        unknown option letter is met (otherwise None).
+    """
+    flags: set[str] = set()
+    paths: list[str] = []
+    error: str | None = None
+    for arg in args:
+        if arg.startswith("-"):
+            for letter in arg[1:]:
+                if letter not in LS_FLAGS:
+                    error = f"ls: invalid option -- '{letter}'"
+                    break
+            if error is not None:
+                break
+            flags.update(arg[1:])
+        else:
+            paths.append(arg)
+    return flags, paths, error
+
+
+def _visible(
+    dirs: list[str], files: list[str], show_hidden: bool
+) -> tuple[list[str], list[str]]:
+    """Filter dot entries unless hidden files are requested.
+
+    Args:
+        dirs: The subdirectory names.
+        files: The file names.
+        show_hidden: Whether dot entries are included.
+
+    Returns:
+        The (possibly filtered) directory and file names.
+    """
+    if show_hidden:
+        return dirs, files
+    visible_dirs = [d for d in dirs if not d.startswith(DOT)]
+    visible_files = [f for f in files if not f.startswith(DOT)]
+    return visible_dirs, visible_files
+
+
+def _short_list(dirs: list[str], files: list[str]) -> str:
+    """Build the plain ls listing line.
+
+    Args:
+        dirs: The subdirectory names.
+        files: The file names.
+
+    Returns:
+        The entries in one line; directories get a trailing '/'.
+    """
+    dir_set = set(dirs)
+    entries = [
+        entry + "/" if entry in dir_set else entry
+        for entry in sorted(dirs + files)
+    ]
+    return " ".join(entries)
 
 
 def parse_line(line: str) -> tuple[str, list[str]]:
@@ -53,6 +134,7 @@ class ShellCore:
                 created when none is given.
         """
         self._running = True
+        self._prev_cwd: str | None = None
         self._vfs = vfs if vfs is not None else VfsSystem()
         self._handlers = {
             "ls": self._ls,
@@ -147,20 +229,23 @@ class ShellCore:
         return commands.date(args)
 
     def _ls(self, args: list[str]) -> CommandResult:
-        """List a VFS directory (the current one by default).
+        """List a VFS directory, supporting -a and -l options.
 
         Args:
-            args: The command arguments (at most one path).
+            args: Options (-a, -l, combinable) and at most one
+                path.
 
         Returns:
-            The directory entries in one line (directories marked
-            with a trailing slash), or an error message.
+            The listing text, or an error message.
         """
-        if len(args) > 1:
+        flags, paths, error = _parse_ls_args(args)
+        if error is not None:
+            return CommandResult(error, True)
+        if len(paths) > 1:
             return CommandResult(LS_USAGE, True)
-        if args:
-            target = self._vfs.resolve(args[0])
-            name = args[0]
+        if paths:
+            target = self._vfs.resolve(paths[0])
+            name = paths[0]
         else:
             target = self._vfs.cwd
             name = target
@@ -173,11 +258,40 @@ class ShellCore:
                 f"ls: {name}: not a directory", True
             )
         dirs, files = self._vfs.list_dir(target)
-        entries = [d + "/" for d in dirs] + files
-        return CommandResult(" ".join(entries), False)
+        dirs, files = _visible(dirs, files, "a" in flags)
+        if "l" in flags:
+            return CommandResult(
+                self._long_list(target, dirs, files), False
+            )
+        return CommandResult(_short_list(dirs, files), False)
+
+    def _long_list(
+        self, target: str, dirs: list[str], files: list[str]
+    ) -> str:
+        """Build the ls -l lines for the given entries.
+
+        Args:
+            target: The listed VFS directory.
+            dirs: The subdirectory names (already filtered).
+            files: The file names (already filtered).
+
+        Returns:
+            The long-format listing joined by newlines.
+        """
+        lines: list[str] = []
+        for name in sorted(dirs + files):
+            child = self._vfs.child(target, name)
+            if self._vfs.is_dir(child):
+                perm, size = DIR_PERMS, "-"
+            else:
+                perm = FILE_PERMS
+                content = self._vfs.read_file(child) or ""
+                size = len(content.encode("utf-8"))
+            lines.append(f"{perm}  {size:>4}  {name}")
+        return "\n".join(lines)
 
     def _cd(self, args: list[str]) -> CommandResult:
-        """Change the current VFS directory.
+        """Change the current VFS directory (``cd -`` goes back).
 
         Without arguments the core returns to the VFS root.
 
@@ -185,10 +299,13 @@ class ShellCore:
             args: The command arguments (at most one path).
 
         Returns:
-            An empty result on success, or an error message.
+            An empty result on success, the new path for
+            ``cd -``, or an error message.
         """
         if len(args) > 1:
             return CommandResult(CD_USAGE, True)
+        if args and args[0] == CD_PREV:
+            return self._cd_previous()
         if args:
             target = self._vfs.resolve(args[0])
         else:
@@ -201,8 +318,32 @@ class ShellCore:
             return CommandResult(
                 f"cd: {target}: not a directory", True
             )
-        self._vfs.set_current(target)
+        self._remember_and_move(target)
         return CommandResult("", False)
+
+    def _cd_previous(self) -> CommandResult:
+        """Switch to the previous directory (the ``cd -`` mode).
+
+        Returns:
+            The new current path, or an error when there is no
+            previous directory yet.
+        """
+        if self._prev_cwd is None:
+            return CommandResult(CD_NO_PREVIOUS, True)
+        previous = self._prev_cwd
+        self._prev_cwd = self._vfs.cwd
+        self._vfs.set_current(previous)
+        return CommandResult(self._vfs.cwd, False)
+
+    def _remember_and_move(self, target: str) -> None:
+        """Move the VFS cursor, remembering the previous one.
+
+        Args:
+            target: The validated destination VFS path.
+        """
+        if target != self._vfs.cwd:
+            self._prev_cwd = self._vfs.cwd
+        self._vfs.set_current(target)
 
     def _pwd(self, args: list[str]) -> CommandResult:
         """Print the current VFS directory.

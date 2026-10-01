@@ -1,5 +1,6 @@
-"""Tests for the command dispatch and VFS commands (stage 3)."""
+"""Tests for the command dispatch and VFS commands (stage 4)."""
 
+from datetime import datetime
 from pathlib import Path
 
 from src.core import ShellCore
@@ -16,6 +17,9 @@ def make_vfs(tmp_path: Path) -> ShellCore:
     )
     (tmp_path / "home" / "user" / "notes.txt").write_text(
         "notes here\n", encoding="utf-8"
+    )
+    (tmp_path / "home" / "user" / ".bashrc").write_text(
+        "bashrc\n", encoding="utf-8"
     )
     (tmp_path / "tmp" / "scratch.txt").write_text(
         "scratch\n", encoding="utf-8"
@@ -111,6 +115,87 @@ def test_cd_too_many_arguments(tmp_path):
     result = core.execute("cd /etc /tmp")
     assert result.is_error is True
     assert result.text == "cd: too many arguments"
+
+
+def test_ls_hides_dot_files_by_default(tmp_path):
+    """Dot files are not listed without the -a option."""
+    core = make_vfs(tmp_path)
+    result = core.execute("ls /home/user")
+    assert ".bashrc" not in result.text
+    assert result.text == "notes.txt"
+
+
+def test_ls_a_shows_dot_files(tmp_path):
+    """The -a option lists dot files first (ASCII order)."""
+    core = make_vfs(tmp_path)
+    result = core.execute("ls -a /home/user")
+    assert result.is_error is False
+    assert result.text == ".bashrc notes.txt"
+
+
+def test_ls_l_long_format(tmp_path):
+    """The -l option lists permissions and file sizes."""
+    core = make_vfs(tmp_path)
+    result = core.execute("ls -l /etc")
+    assert result.is_error is False
+    assert "-rw-r--r--" in result.text
+    assert "hostname" in result.text
+    result = core.execute("ls -l")
+    assert "drwxr-xr-x" in result.text
+    assert "etc/" not in result.text
+    assert "etc" in result.text
+
+
+def test_ls_la_combined_options(tmp_path):
+    """-a and -l work together."""
+    core = make_vfs(tmp_path)
+    result = core.execute("ls -la /home/user")
+    assert result.is_error is False
+    assert ".bashrc" in result.text
+    assert "-rw-r--r--" in result.text
+
+
+def test_ls_invalid_option(tmp_path):
+    """An unknown option letter is an error."""
+    core = make_vfs(tmp_path)
+    result = core.execute("ls -x")
+    assert result.is_error is True
+    assert result.text == "ls: invalid option -- 'x'"
+
+
+def test_cd_dash_switches_previous(tmp_path):
+    """cd - returns to the previous directory and prints it."""
+    core = make_vfs(tmp_path)
+    core.execute("cd /home/user")
+    result = core.execute("cd -")
+    assert result.is_error is False
+    assert result.text == "/"
+    core.execute("cd -")
+    assert core.execute("pwd").text == "/home/user"
+
+
+def test_cd_dash_without_history_is_an_error(tmp_path):
+    """cd - without a previous directory is an error."""
+    core = make_vfs(tmp_path)
+    result = core.execute("cd -")
+    assert result.is_error is True
+    assert result.text == "cd: no previous directory"
+
+
+def test_cal_via_core(tmp_path):
+    """cal is registered in the command dispatcher."""
+    core = make_vfs(tmp_path)
+    result = core.execute("cal 1 2024")
+    assert result.is_error is False
+    assert "January 2024" in result.text
+
+
+def test_date_via_core(tmp_path):
+    """date is registered in the command dispatcher."""
+    core = make_vfs(tmp_path)
+    result = core.execute("date +%Y")
+    assert result.is_error is False
+    assert result.text == str(datetime.now().year)
 
 
 def test_pwd_at_root(tmp_path):

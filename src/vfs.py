@@ -147,6 +147,20 @@ class VfsSystem:
                 files.append(rest)
         return sorted(dirs), sorted(files)
 
+    def child(self, directory: str, name: str) -> str:
+        """The normalized path of a direct child entry.
+
+        Args:
+            directory: A normalized VFS directory path.
+            name: The child name.
+
+        Returns:
+            The normalized child path.
+        """
+        base = directory.rstrip("/")
+        prefix = base + "/" if base else ROOT_PATH
+        return prefix + name
+
     def read_file(self, path: str) -> str | None:
         """Return the content of a file, or None if it is missing.
 
