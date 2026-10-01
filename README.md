@@ -3,7 +3,7 @@
 **Дисциплина:** Конфигурационное управление
 **Группа:** ИКБО-32-25
 **Вариант:** 26
-**Выполнено:** Этап 1 (REPL), Этап 2 (Конфигурация), Этап 3 (VFS), Этап 4 (Основные команды)
+**Выполнено:** Этап 1 (REPL), Этап 2 (Конфигурация), Этап 3 (VFS), Этап 4 (Основные команды), Этап 5 (Дополнительные команды)
 
 ## 1. Общее описание
 
@@ -31,6 +31,11 @@ UNIX-подобной операционной системы.
 (календарь месяца) и `date` (текущие дата и время, формат
 после `+`).
 
+На **этапе 5** VFS стала изменяемой (только в памяти):
+добавлены команды `touch` (создание пустых файлов), `chmod`
+(смена бита выполнения, `+x`/`-x`) и `vfs-load` (загрузка
+новой VFS с диска во время сеанса).
+
 Приложение реализовано на **Python**, графический
 интерфейс — **Tkinter** (входит в стандартную поставку
 Python, внешних зависимостей нет).
@@ -49,12 +54,18 @@ Python, внешних зависимостей нет).
   (`--vfs`), при запуске дерево и содержимое файлов
   копируются в память; работа с диском после загрузки не
   ведётся, данные VFS не модифицируются.
-- Команды (этапы 3–4): `ls` — со списком директории,
+- Команды (этапы 3–5): `ls` — со списком директории,
   опциями `-a` (скрытые файлы) и `-l` (права, размер),
   `cd` — переходы и `cd -` (предыдущая директория), `pwd` —
   текущая директория VFS, `cat` — содержимое файлов VFS,
   `cal` — календарь месяца (0/1/2 аргумента), `date` — дата
-  и время, формат после `+`.
+  и время, формат после `+`, `touch` — создание пустых
+  файлов, `chmod` — смена бита выполнения (`+x`/`-x`),
+  `vfs-load` — загрузка новой VFS с диска во время сеанса.
+- **Изменение VFS только в памяти** (этап 5): `touch`/
+  `chmod` изменяют дерево и права в памяти, на диск данные
+  не записываются; `vfs-load` заменяет VFS другой,
+  загруженной с диска.
 - Приглашение ввода показывает **текущую директорию VFS**:
   `user@host:/home/user$ `.
 - `exit` завершает сеанс и закрывает окно.
@@ -114,7 +125,10 @@ Conf_Atrey/
 │   ├── startup_basic.txt  # стартовый скрипт: без ошибок
 │   ├── startup_error.txt  # стартовый скрипт: стоп на ошибке
 │   ├── startup_full.txt   # все команды этапов 1-3 (этап 3)
-│   └── startup_stage4.txt # все режимы команд этапа 4
+│   ├── startup_stage4.txt # все режимы команд этапа 4
+│   ├── test_stage5.bat    # команды этапа 5, Windows
+│   ├── test_stage5.sh     # команды этапа 5, Linux/macOS
+│   └── startup_stage5.txt # все режимы команд этапа 5
 ├── vfs/                   # VFS по умолчанию (3 уровня вложенности)
 │   ├── .profile           # скрытый файл (для ls -a, этап 4)
 │   ├── etc/hostname
@@ -158,6 +172,9 @@ VFS) вынесена в `src/core.py`, `src/config.py`,
 | `cat` | `файл [файл ...]` | содержимое одного или нескольких файлов VFS |
 | `cal` | `[месяц] [год]` | календарь месяца: без аргументов — текущий месяц, 1 аргумент — месяц текущего года, 2 — месяц и год; сетка недель по 7 дней, воскресенье — первый день |
 | `date` | `["+ФОРМАТ"]` | текущие дата и время в формате UNIX (`Thu Oct 01 12:00:00 2026`); после `+` — формат `strftime` (например `date +%Y-%m-%d`) |
+| `touch` | `файл [файл ...]` | создать пустой файл в VFS (только в памяти); существующие файлы и директории не меняются (как в UNIX); путь — относительно текущей директории |
+| `chmod` | `+x\|-x файл [...]` | выставить/снять бит выполнения у файла или директории VFS (упрощённые символьные режимы); результат виден в `ls -l` |
+| `vfs-load` | `путь` | загрузить новую VFS с диска (путь к физической директории) и заменить текущую; текущая директория сбрасывается в корень; вывод `vfs loaded: N files, M dirs from <путь>` |
 | `exit` | — | завершает сеанс, окно закрывается |
 
 ### Обработка ошибок
@@ -180,6 +197,14 @@ VFS) вынесена в `src/core.py`, `src/config.py`,
 | `cal`: год не число или 0 | `cal: invalid year: 0` |
 | `cal` / `date` с лишними аргументами | `<cmd>: too many arguments` |
 | `date` с аргументом без `+` | `date: invalid format: Y` |
+| `touch` без аргументов | `touch: missing file operand` |
+| `touch`: родительской директории нет | `touch: <путь>: no such file or directory` |
+| `chmod` без режима или без файлов | `chmod: missing operand` |
+| `chmod`: неподдерживаемый режим | `chmod: invalid mode: '7z'` |
+| `chmod`: нет такого пути | `chmod: <путь>: no such file or directory` |
+| `vfs-load` без аргументов / с лишними | `vfs-load: missing operand` / `vfs-load: too many arguments` |
+| `vfs-load`: нет такого пути | `vfs-load: <путь>: no such file or directory` |
+| `vfs-load`: путь — файл | `vfs-load: <путь>: not a directory` |
 | пустая строка | игнорируется, повторяется приглашение ввода |
 
 При запуске (в консоли, код возврата 1):
@@ -204,6 +229,11 @@ VFS) вынесена в `src/core.py`, `src/config.py`,
   загруженной VFS.
 - Путь `..` выше корня оставляет в корне, как в настоящем
   shell.
+- Изменения VFS (этап 5) происходят **только в памяти**:
+  `touch` создаёт пустые файлы, `chmod` меняет строку прав
+  (её показывает `ls -l`), `vfs-load` заменяет VFS другой,
+  загруженной с диска; файлы на диске ни при загрузке, ни
+  при изменениях не затрагиваются.
 
 Сэмплы VFS для проверки разных вариантов:
 
@@ -257,7 +287,12 @@ VFS) вынесена в `src/core.py`, `src/config.py`,
 `scripts/startup_stage4.txt` — все режимы команд этапа 4
 (`cal` 0/1/2 аргумента, `date` + формат, `ls`/`ls -a`/
 `ls -l`/`ls -la`, `cd /`, `cd -`, и завершающая
-строка-ошибка `cal 13`).
+строка-ошибка `cal 13`),
+`scripts/startup_stage5.txt` — все режимы команд этапа 5
+(`touch` нового/существующего файла и директории,
+`chmod +x`/`-x` с выводом `ls -l`, `vfs-load` на
+`vfs_multi` и обратно, и завершающая строка-ошибка
+`touch /no_such_dir/file`).
 
 ### Скрипты реальной ОС (тестирование)
 
@@ -267,6 +302,7 @@ VFS) вынесена в `src/core.py`, `src/config.py`,
 | ошибки параметров (этап 2) | `scripts\test_errors.bat` | `scripts/test_errors.sh` | некорректные `--vfs`/`--script`, код возврата 1 |
 | варианты VFS (этап 3) | `scripts\test_vfs.bat` | `scripts/test_vfs.sh` | `vfs_minimal`, `vfs_multi`, `vfs_deep`, VFS по умолчанию + `startup_full.txt`, `--vfs` + `--script` вместе, несуществующий `--vfs` |
 | команды этапа 4 | `scripts\test_stage4.bat` | `scripts/test_stage4.sh` | интерактивный запуск, `startup_stage4.txt` на VFS по умолчанию и на `vfs_deep` |
+| команды этапа 5 | `scripts\test_stage5.bat` | `scripts/test_stage5.sh` | интерактивный запуск, `startup_stage5.txt` на VFS по умолчанию и на `vfs_deep` |
 
 Каждый запуск открывает окно эмулятора; закройте его
 командой `exit`, чтобы скрипт перешёл к следующему
@@ -289,6 +325,7 @@ VFS) вынесена в `src/core.py`, `src/config.py`,
 | тесты параметров (скрипты ОС) | `scripts\test_config.bat` / `bash scripts/test_config.sh` (`make test-os`) |
 | тесты вариантов VFS | `scripts\test_vfs.bat` / `bash scripts/test_vfs.sh` |
 | тесты команд этапа 4 | `scripts\test_stage4.bat` / `bash scripts/test_stage4.sh` |
+| тесты команд этапа 5 | `scripts\test_stage5.bat` / `bash scripts/test_stage5.sh` |
 
 ## 4. Примеры использования
 
@@ -384,6 +421,44 @@ user@PC:/$
 (`.profile`, `.bashrc`), а `ls -l` — права и размер файла в
 байтах.
 
+### Дополнительные команды этапа 5 (стартовый скрипт)
+
+```
+python -m src.main --script scripts\startup_stage5.txt
+```
+
+Скрипт создаёт файл `touch` (и повторяет `touch` для
+существующего файла и директории), переключает бит
+выполнения через `chmod +x`/`-x` (промежуточный вывод
+`ls -l`), загружает `vfs_multi` и `vfs/` через `vfs-load` и
+заканчивается строкой `touch /no_such_dir/file` — первой
+ошибкой, на которой останавливается:
+
+```
+user@PC:/$ touch newfile.txt
+user@PC:/$ ls
+etc/ home/ newfile.txt tmp/
+user@PC:/$ chmod +x newfile.txt
+user@PC:/$ ls -l
+drwxr-xr-x     -  etc
+-rwxr--r--     0  newfile.txt
+...
+user@PC:/$ vfs-load vfs_multi
+vfs loaded: 4 files, 2 dirs from vfs_multi
+user@PC:/$ ls
+alpha.txt beta.txt gamma.txt logs/
+user@PC:/$ vfs-load vfs
+vfs loaded: 5 files, 5 dirs from vfs
+user@PC:/$ touch /no_such_dir/file
+touch: /no_such_dir/file: no such file or directory
+script stopped at line 18 (error)
+user@PC:/$
+```
+
+Все изменения (`touch`, `chmod`) сохраняются **только в
+памяти**; `chmod +x` меняет строку прав на `-rwxr--r--`, что
+видно в `ls -l`.
+
 ### Варианты VFS (скрипты ОС)
 
 ```
@@ -413,9 +488,10 @@ error: VFS path does not exist: no_such_dir
 
 Эмулятор сам «вводит» команды из `demo/demo_script.txt`:
 переходы по VFS, `cat`, `ls -a`/`ls -l`, `cal`, `date`
-с форматом, неизвестную команду и `exit 1` (красным,
-демо-режим не останавливается), затем `exit` закрывает
-окно. Режим рассчитан на запись экрана.
+с форматом, `touch`, `chmod +x` (с выводом `ls -l`),
+`vfs-load vfs_sample`, неизвестную команду и `exit 1`
+(красным, демо-режим не останавливается), затем `exit`
+закрывает окно. Режим рассчитан на запись экрана.
 
 ## 5. Коммиты этапов
 
@@ -449,3 +525,9 @@ error: VFS path does not exist: no_such_dir
 - `feat(vfs): add ls -a/-l flags, hidden files and cd - mode`
 - `feat(os-scripts): add stage 4 startup and test scripts`
 - `docs: update README with stage 4 commands`
+
+### Этап 5 (Дополнительные команды)
+
+- `feat(vfs): add touch, chmod and vfs-load commands`
+- `feat(os-scripts): add stage 5 startup and test scripts`
+- `docs: update README with stage 5 commands`
