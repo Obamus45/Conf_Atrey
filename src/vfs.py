@@ -1,8 +1,11 @@
-"""In-memory virtual file system (stage 3).
+"""In-memory virtual file system (stages 3 and 5).
 
 The VFS is loaded from a directory on disk at startup and keeps
 all its data in memory: nothing on disk is ever modified
 (stage 3 requirement). The source directory is only read.
+Stage 5 adds in-memory modifications: ``touch`` and ``chmod``
+change the stored tree and permission strings, and ``vfs-load``
+replaces the tree with another one loaded from disk.
 """
 
 from __future__ import annotations
@@ -11,6 +14,13 @@ from pathlib import Path
 
 #: The root path of the virtual file system.
 ROOT_PATH = "/"
+
+#: Default permission strings of the VFS entries.
+DEFAULT_DIR_PERMS = "drwxr-xr-x"
+DEFAULT_FILE_PERMS = "-rw-r--r--"
+
+#: The position of the owner execute bit in a permission string.
+EXEC_BIT = 3
 
 
 def _read_text(path: Path) -> str:
@@ -31,12 +41,13 @@ def _read_text(path: Path) -> str:
 
 
 class VfsSystem:
-    """A read-only in-memory virtual file system."""
+    """An in-memory virtual file system (modifiable in stage 5)."""
 
     def __init__(self) -> None:
         """Create an empty VFS with a single root directory."""
         self._dirs: set[str] = {ROOT_PATH}
         self._files: dict[str, str] = {}
+        self._perms: dict[str, str] = {ROOT_PATH: DEFAULT_DIR_PERMS}
         self._current = ROOT_PATH
 
     @property
@@ -65,8 +76,10 @@ class VfsSystem:
             rel = entry.relative_to(source).as_posix()
             if entry.is_dir():
                 vfs._dirs.add("/" + rel)
+                vfs._perms["/" + rel] = DEFAULT_DIR_PERMS
             else:
                 vfs._files["/" + rel] = _read_text(entry)
+                vfs._perms["/" + rel] = DEFAULT_FILE_PERMS
         return vfs
 
     def exists(self, path: str) -> bool:
@@ -168,3 +181,46 @@ class VfsSystem:
             path: A normalized VFS file path.
         """
         return self._files.get(path)
+
+    def parent(self, path: str) -> str:
+        """The parent directory of a normalized VFS path.
+
+        Args:
+            path: A normalized VFS path (file or directory).
+
+        Returns:
+            The parent directory; the root for first-level paths.
+        """
+        base = path.rstrip("/")
+        index = base.rfind("/")
+        if index <= 0:
+            return ROOT_PATH
+        return base[:index]
+
+    def perm(self, path: str) -> str | None:
+        """The permission string of an entry, or None if missing.
+
+        Args:
+            path: A normalized VFS path.
+        """
+        return self._perms.get(path)
+
+    def create_file(self, path: str) -> None:
+        """Create an empty file (the parent must exist).
+
+        Args:
+            path: A normalized VFS path that does not exist yet.
+        """
+        self._files[path] = ""
+        self._perms[path] = DEFAULT_FILE_PERMS
+
+    def toggle_exec(self, path: str, enable: bool) -> None:
+        """Set or clear the owner execute bit of an entry.
+
+        Args:
+            path: A normalized VFS path of an existing entry.
+            enable: Whether the execute bit must be set.
+        """
+        perm = list(self._perms[path])
+        perm[EXEC_BIT] = "x" if enable else "-"
+        self._perms[path] = "".join(perm)

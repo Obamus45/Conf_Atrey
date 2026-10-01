@@ -286,3 +286,108 @@ def test_exit_with_args_reports_error():
     assert result.text == "exit: too many arguments"
     assert result.is_error is True
     assert core.running is True
+
+
+# --- Stage 5: touch, chmod, vfs-load ------------------------------------
+
+def test_touch_creates_empty_file(tmp_path):
+    """touch creates an empty file in the current directory."""
+    core = make_vfs(tmp_path)
+    core.execute("cd /home/user")
+    result = core.execute("touch notes2.txt")
+    assert result.is_error is False
+    assert result.text == ""
+    assert "notes2.txt" in core.execute("ls").text
+    assert core.execute("cat notes2.txt").text == ""
+
+
+def test_touch_existing_file_and_dir_is_ok(tmp_path):
+    """touch on existing files and directories is not an error."""
+    core = make_vfs(tmp_path)
+    assert core.execute("touch notes.txt").is_error is False
+    assert core.execute("touch /home/user").is_error is False
+
+
+def test_touch_missing_parent_is_an_error(tmp_path):
+    """touch below a missing directory is an error."""
+    core = make_vfs(tmp_path)
+    result = core.execute("touch /no_such_dir/file")
+    assert result.is_error is True
+    assert result.text == "touch: /no_such_dir/file: no such file or directory"
+
+
+def test_touch_missing_operand_is_an_error(tmp_path):
+    """touch without arguments is a missing-operand error."""
+    core = make_vfs(tmp_path)
+    result = core.execute("touch")
+    assert result.is_error is True
+    assert result.text == "touch: missing file operand"
+
+
+def test_chmod_add_and_remove_exec_bit(tmp_path):
+    """chmod +x/-x change the permission string shown by ls -l."""
+    core = make_vfs(tmp_path)
+    core.execute("cd /home/user")
+    core.execute("touch script.sh")
+    assert "-rw-r--r--" in core.execute("ls -l").text
+    core.execute("chmod +x script.sh")
+    long = core.execute("ls -l").text
+    assert "-rwxr--r--" in long
+    core.execute("chmod -x script.sh")
+    lines = core.execute("ls -l").text.splitlines()
+    script_line = [l for l in lines if "script.sh" in l]
+    assert len(script_line) == 1
+    assert script_line[0].startswith("-rw-r--r--")
+
+
+def test_chmod_invalid_mode_is_an_error(tmp_path):
+    """chmod with an unsupported mode is an error."""
+    core = make_vfs(tmp_path)
+    result = core.execute("chmod 7z notes.txt")
+    assert result.is_error is True
+    assert result.text == "chmod: invalid mode: '7z'"
+
+
+def test_chmod_missing_operands_are_errors(tmp_path):
+    """chmod without a mode or without files is an error."""
+    core = make_vfs(tmp_path)
+    assert core.execute("chmod").is_error is True
+    result = core.execute("chmod +x")
+    assert result.is_error is True
+    assert result.text == "chmod: missing operand"
+
+
+def test_chmod_missing_file_is_an_error(tmp_path):
+    """chmod on a missing path is an error."""
+    core = make_vfs(tmp_path)
+    result = core.execute("chmod +x no_such_file")
+    assert result.is_error is True
+    assert result.text == "chmod: no_such_file: no such file or directory"
+
+
+def test_vfs_load_replaces_the_vfs(tmp_path):
+    """vfs-load replaces the in-memory VFS with another directory."""
+    core = make_vfs(tmp_path)
+    source = Path(__file__).resolve().parent.parent / "vfs_multi"
+    result = core.execute(f"vfs-load {source}")
+    assert result.is_error is False
+    assert "vfs loaded: 4 files, 2 dirs" in result.text
+    assert core.execute("pwd").text == "/"
+    assert "alpha.txt" in core.execute("ls").text
+    assert core.execute("cat alpha.txt").text.startswith("файл alpha")
+
+
+def test_vfs_load_errors(tmp_path):
+    """vfs-load with a bad path or bad arguments is an error."""
+    core = make_vfs(tmp_path)
+    result = core.execute("vfs-load /no_such_dir_xyz")
+    assert result.is_error is True
+    assert "no such file or directory" in result.text
+    repo = Path(__file__).resolve().parent.parent
+    source = repo / "vfs_minimal" / "hello.txt"
+    result = core.execute(f"vfs-load {source}")
+    assert result.is_error is True
+    assert "not a directory" in result.text
+    assert core.execute("vfs-load").is_error is True
+    assert core.execute("vfs-load a b").is_error is True
+    assert "alpha.txt" not in core.execute("ls").text

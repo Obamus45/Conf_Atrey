@@ -4,11 +4,15 @@ The module parses input lines and dispatches them to command
 handlers. Stage 3 replaces the stage 1 stubs with real commands
 backed by the in-memory VFS: ``ls``, ``cd``, ``pwd`` and ``cat``.
 Stage 4 deepens ``ls``/``cd`` and adds ``cal`` and ``date``.
-The graphical front-end (``src.main``) reuses this module, so
-the behaviour can be unit-tested without a display.
+Stage 5 adds the commands that modify the VFS in memory:
+``touch``, ``chmod`` and ``vfs-load``. The graphical front-end
+(``src.main``) reuses this module, so the behaviour can be
+unit-tested without a display.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from . import commands
 from .result import CommandResult
@@ -29,12 +33,19 @@ LS_FLAGS = "al"
 #: The prefix of a hidden (dot) entry.
 DOT = "."
 
-#: Permission strings of the ls -l mode (static on this stage).
-DIR_PERMS = "drwxr-xr-x"
-FILE_PERMS = "-rw-r--r--"
-
 #: The cd argument that switches to the previous directory.
 CD_PREV = "-"
+
+#: The usage messages of the stage 5 commands.
+TOUCH_USAGE = "touch: missing file operand"
+CHMOD_USAGE = "chmod: missing operand"
+VFS_LOAD_USAGE = "vfs-load: missing operand"
+VFS_LOAD_TOO_MANY = "vfs-load: too many arguments"
+
+#: The chmod modes supported on this stage (simplified forms).
+CHMOD_ADD = "+x"
+CHMOD_REMOVE = "-x"
+CHMOD_MODES = (CHMOD_ADD, CHMOD_REMOVE)
 
 
 def _parse_ls_args(
@@ -143,6 +154,9 @@ class ShellCore:
             "cat": self._cat,
             "cal": self._cal,
             "date": self._date,
+            "touch": self._touch,
+            "chmod": self._chmod,
+            "vfs-load": self._vfs_load,
         }
 
     @property
@@ -281,10 +295,10 @@ class ShellCore:
         lines: list[str] = []
         for name in sorted(dirs + files):
             child = self._vfs.child(target, name)
+            perm = self._vfs.perm(child) or "-"
             if self._vfs.is_dir(child):
-                perm, size = DIR_PERMS, "-"
+                size = "-"
             else:
-                perm = FILE_PERMS
                 content = self._vfs.read_file(child) or ""
                 size = len(content.encode("utf-8"))
             lines.append(f"{perm}  {size:>4}  {name}")
@@ -382,3 +396,100 @@ class ShellCore:
                 )
             chunks.append(self._vfs.read_file(target) or "")
         return CommandResult("".join(chunks), False)
+
+    def _touch(self, args: list[str]) -> CommandResult:
+        """Create empty VFS files (stage 5, in memory only).
+
+        Existing files and directories are left as they are,
+        like the UNIX ``touch`` does.
+
+        Args:
+            args: The file paths (at least one).
+
+        Returns:
+            An empty result on success, or the collected error
+            messages (one per missing parent directory).
+        """
+        if not args:
+            return CommandResult(TOUCH_USAGE, True)
+        errors: list[str] = []
+        for arg in args:
+            target = self._vfs.resolve(arg)
+            if self._vfs.exists(target):
+                continue
+            if not self._vfs.is_dir(self._vfs.parent(target)):
+                errors.append(
+                    f"touch: {arg}: no such file or directory"
+                )
+                continue
+            self._vfs.create_file(target)
+        if errors:
+            return CommandResult("\n".join(errors), True)
+        return CommandResult("", False)
+
+    def _chmod(self, args: list[str]) -> CommandResult:
+        """Set or clear the execute bit of VFS entries (stage 5).
+
+        Supported modes: ``+x`` and ``-x`` (simplified symbolic
+        forms); they change the in-memory permission string that
+        ``ls -l`` displays.
+
+        Args:
+            args: A mode followed by the paths (at least one).
+
+        Returns:
+            An empty result on success, or error messages.
+        """
+        if not args:
+            return CommandResult(CHMOD_USAGE, True)
+        mode, files = args[0], args[1:]
+        if mode not in CHMOD_MODES:
+            return CommandResult(
+                f"chmod: invalid mode: '{mode}'", True
+            )
+        if not files:
+            return CommandResult(CHMOD_USAGE, True)
+        errors: list[str] = []
+        for arg in files:
+            target = self._vfs.resolve(arg)
+            if not self._vfs.exists(target):
+                errors.append(
+                    f"chmod: {arg}: no such file or directory"
+                )
+                continue
+            self._vfs.toggle_exec(target, mode == CHMOD_ADD)
+        if errors:
+            return CommandResult("\n".join(errors), True)
+        return CommandResult("", False)
+
+    def _vfs_load(self, args: list[str]) -> CommandResult:
+        """Replace the in-memory VFS with another one from disk.
+
+        Args:
+            args: Exactly one path to a directory on disk.
+
+        Returns:
+            A confirmation with the loaded size, or an error
+            message.
+        """
+        if not args:
+            return CommandResult(VFS_LOAD_USAGE, True)
+        if len(args) > 1:
+            return CommandResult(VFS_LOAD_TOO_MANY, True)
+        arg = args[0]
+        source = Path(arg)
+        if not source.exists():
+            return CommandResult(
+                f"vfs-load: {arg}: no such file or directory", True
+            )
+        if not source.is_dir():
+            return CommandResult(
+                f"vfs-load: {arg}: not a directory", True
+            )
+        self._vfs = VfsSystem.from_directory(source)
+        self._prev_cwd = None
+        files, dirs = self._vfs.stats
+        return CommandResult(
+            f"vfs loaded: {files} files, {dirs} dirs from {arg}",
+            False,
+        )
