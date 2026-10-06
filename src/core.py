@@ -18,7 +18,6 @@ from . import commands
 from .result import CommandResult
 from .vfs import ROOT_PATH, VfsSystem
 
-#: Error templates (UNIX-style messages, intentionally in English).
 UNKNOWN_COMMAND = "sh: {name}: command not found"
 EXIT_USAGE = "exit: too many arguments"
 LS_USAGE = "ls: too many arguments"
@@ -27,22 +26,17 @@ PWD_USAGE = "pwd: too many arguments"
 CAT_USAGE = "cat: missing file operand"
 CD_NO_PREVIOUS = "cd: no previous directory"
 
-#: Valid ls option letters.
 LS_FLAGS = "al"
 
-#: The prefix of a hidden (dot) entry.
 DOT = "."
 
-#: The cd argument that switches to the previous directory.
 CD_PREV = "-"
 
-#: The usage messages of the stage 5 commands.
 TOUCH_USAGE = "touch: missing file operand"
 CHMOD_USAGE = "chmod: missing operand"
 VFS_LOAD_USAGE = "vfs-load: missing operand"
 VFS_LOAD_TOO_MANY = "vfs-load: too many arguments"
 
-#: The chmod modes supported on this stage (simplified forms).
 CHMOD_ADD = "+x"
 CHMOD_REMOVE = "-x"
 CHMOD_MODES = (CHMOD_ADD, CHMOD_REMOVE)

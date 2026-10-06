@@ -19,7 +19,7 @@ def test_cal_known_month_grid():
     """February 2024 starts on Thursday and has five week rows."""
     result = cal(["2", "2024"])
     lines = result.text.splitlines()
-    expected_rows = 7  # title + weekday header + five weeks
+    expected_rows = 7
     assert len(lines) == expected_rows
     assert lines[0].strip() == "February 2024"
     first_week = lines[2]

@@ -12,7 +12,6 @@ from pathlib import Path
 
 from .core import ShellCore
 
-#: The prefix of a comment line in a startup script.
 COMMENT_PREFIX = "#"
 
 

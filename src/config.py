@@ -6,13 +6,10 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
-#: The repository root (the parent of the ``src`` package).
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-#: Default location of the virtual file system directory.
 DEFAULT_VFS = REPO_ROOT / "vfs"
 
-#: Standard startup script used by the ``--demo`` flag.
 DEMO_SCRIPT = REPO_ROOT / "demo" / "demo_script.txt"
 
 

@@ -28,7 +28,7 @@ def test_from_directory_loads_the_tree(tmp_path):
     assert vfs.is_dir("/home/user")
     assert vfs.exists("/home/user/notes.txt")
     assert vfs.is_dir("/empty")
-    expected = (2, 5)  # two files, five directories (incl. /)
+    expected = (2, 5)
     assert vfs.stats == expected
 
 

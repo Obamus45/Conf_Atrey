@@ -12,14 +12,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-#: The root path of the virtual file system.
 ROOT_PATH = "/"
 
-#: Default permission strings of the VFS entries.
 DEFAULT_DIR_PERMS = "drwxr-xr-x"
 DEFAULT_FILE_PERMS = "-rw-r--r--"
 
-#: The position of the owner execute bit in a permission string.
 EXEC_BIT = 3
 
 

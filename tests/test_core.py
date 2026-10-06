@@ -288,8 +288,6 @@ def test_exit_with_args_reports_error():
     assert core.running is True
 
 
-# --- Stage 5: touch, chmod, vfs-load ------------------------------------
-
 def test_touch_creates_empty_file(tmp_path):
     """touch creates an empty file in the current directory."""
     core = make_vfs(tmp_path)

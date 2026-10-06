@@ -12,17 +12,14 @@ from datetime import datetime
 
 from .result import CommandResult
 
-#: Valid argument ranges (inclusive).
 MIN_MONTH = 1
 MAX_MONTH = 12
 MIN_YEAR = 1
 MAX_YEAR = 9999
 
-#: Calendar layout (UNIX ``cal`` style, 2-character day columns).
 TABLE_WIDTH = 20
 WEEKDAY_HEADER = "Su Mo Tu We Th Fr Sa"
 
-#: Calendar month names (index 0 is January).
 MONTH_NAMES = (
     "January",
     "February",
@@ -38,7 +35,6 @@ MONTH_NAMES = (
     "December",
 )
 
-#: The maximum number of arguments of cal (month and year).
 MAX_CAL_ARGS = 2
 
 CAL_USAGE = "cal: too many arguments"

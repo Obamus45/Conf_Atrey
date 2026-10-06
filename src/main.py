@@ -28,7 +28,6 @@ from .script import ScriptReport, ScriptStep
 from .script import load_script_lines, run_script
 from .vfs import VfsSystem
 
-#: Window and terminal appearance (constants only).
 TITLE_TEMPLATE = "Эмулятор - [{user}@{host}]"
 PROMPT_TEMPLATE = "{user}@{host}:{path}$ "
 FONT_FAMILY = "Courier New"
@@ -41,7 +40,6 @@ PROMPT_COLOR = "#4ec9b0"
 ERROR_COLOR = "#f48771"
 DIM_COLOR = "#7d8590"
 
-#: Timings of the automatic script replay, in milliseconds.
 STEP_DELAY_MS = 600
 CLOSE_DELAY_MS = 1200
 
